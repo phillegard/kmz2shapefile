@@ -63,14 +63,8 @@ class KMZExtractor:
         Returns:
             KML filename or None if not found
         """
-        # Try doc.kml first (most common)
-        for name in filenames:
-            if name.lower() == 'doc.kml':
-                return name
-
-        # Fall back to any .kml file
-        for name in filenames:
-            if name.lower().endswith('.kml'):
-                return name
-
-        return None
+        # Try doc.kml first (most common), then fall back to any .kml file
+        return (
+            next((n for n in filenames if n.lower() == 'doc.kml'), None) or
+            next((n for n in filenames if n.lower().endswith('.kml')), None)
+        )

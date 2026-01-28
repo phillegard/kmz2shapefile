@@ -24,6 +24,11 @@ class GeometryConverter:
         'gx': 'http://www.google.com/kml/ext/2.2'
     }
 
+    def _find_element(self, parent: etree._Element, tag: str) -> Optional[etree._Element]:
+        """Find child element by tag, trying namespaced first then unnamespaced."""
+        elem = parent.find(f'kml:{tag}', namespaces=self.NAMESPACES)
+        return elem if elem is not None else parent.find(tag)
+
     def convert(self, geometry_element: Optional[etree._Element]) -> Optional[BaseGeometry]:
         """
         Convert KML geometry element to Shapely geometry.
@@ -131,15 +136,11 @@ class GeometryConverter:
         Returns:
             Shapely Point geometry
         """
-        coord_elem = element.find('kml:coordinates', namespaces=self.NAMESPACES)
-        if coord_elem is None:
-            coord_elem = element.find('coordinates')
-
+        coord_elem = self._find_element(element, 'coordinates')
         if coord_elem is None or not coord_elem.text:
             raise GeometryConversionError("Point has no coordinates")
 
         coordinates = self._parse_coordinates(coord_elem.text)
-
         if not coordinates:
             raise GeometryConversionError("Point has invalid coordinates")
 
@@ -155,16 +156,11 @@ class GeometryConverter:
         Returns:
             Shapely LineString geometry
         """
-        coord_elem = element.find('kml:coordinates', namespaces=self.NAMESPACES)
-        if coord_elem is None:
-            coord_elem = element.find('coordinates')
-
+        coord_elem = self._find_element(element, 'coordinates')
         if coord_elem is None or not coord_elem.text:
             raise GeometryConversionError("LineString has no coordinates")
 
-        coordinates = self._parse_coordinates(coord_elem.text)
-
-        return LineString(coordinates)
+        return LineString(self._parse_coordinates(coord_elem.text))
 
     def _convert_polygon(self, element: etree._Element) -> Polygon:
         """
@@ -178,27 +174,15 @@ class GeometryConverter:
         Returns:
             Shapely Polygon geometry
         """
-        # Find outer boundary
-        outer_boundary = element.find('kml:outerBoundaryIs', namespaces=self.NAMESPACES)
-        if outer_boundary is None:
-            outer_boundary = element.find('outerBoundaryIs')
-
+        outer_boundary = self._find_element(element, 'outerBoundaryIs')
         if outer_boundary is None:
             raise GeometryConversionError("Polygon has no outer boundary")
 
-        # Get LinearRing from outer boundary
-        linear_ring = outer_boundary.find('kml:LinearRing', namespaces=self.NAMESPACES)
-        if linear_ring is None:
-            linear_ring = outer_boundary.find('LinearRing')
-
+        linear_ring = self._find_element(outer_boundary, 'LinearRing')
         if linear_ring is None:
             raise GeometryConversionError("Outer boundary has no LinearRing")
 
-        # Get coordinates
-        coord_elem = linear_ring.find('kml:coordinates', namespaces=self.NAMESPACES)
-        if coord_elem is None:
-            coord_elem = linear_ring.find('coordinates')
-
+        coord_elem = self._find_element(linear_ring, 'coordinates')
         if coord_elem is None or not coord_elem.text:
             raise GeometryConversionError("Polygon has no coordinates")
 
@@ -211,23 +195,13 @@ class GeometryConverter:
             inner_boundaries = element.findall('innerBoundaryIs')
 
         for inner_boundary in inner_boundaries:
-            linear_ring = inner_boundary.find('kml:LinearRing', namespaces=self.NAMESPACES)
-            if linear_ring is None:
-                linear_ring = inner_boundary.find('LinearRing')
-
+            linear_ring = self._find_element(inner_boundary, 'LinearRing')
             if linear_ring is not None:
-                coord_elem = linear_ring.find('kml:coordinates', namespaces=self.NAMESPACES)
-                if coord_elem is None:
-                    coord_elem = linear_ring.find('coordinates')
-
+                coord_elem = self._find_element(linear_ring, 'coordinates')
                 if coord_elem is not None and coord_elem.text:
-                    inner_coords = self._parse_coordinates(coord_elem.text)
-                    holes.append(inner_coords)
+                    holes.append(self._parse_coordinates(coord_elem.text))
 
-        if holes:
-            return Polygon(outer_coords, holes)
-        else:
-            return Polygon(outer_coords)
+        return Polygon(outer_coords, holes) if holes else Polygon(outer_coords)
 
     def _convert_multigeometry(self, element: etree._Element) -> BaseGeometry:
         """

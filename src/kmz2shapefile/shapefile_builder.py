@@ -28,16 +28,6 @@ class Feature:
 class ShapefileBuilder:
     """Build and write Shapefile from features."""
 
-    # Mapping from Shapely geometry types to fiona geometry types
-    FIONA_GEOMETRY_TYPES = {
-        'Point': 'Point',
-        'MultiPoint': 'MultiPoint',
-        'LineString': 'LineString',
-        'MultiLineString': 'MultiLineString',
-        'Polygon': 'Polygon',
-        'MultiPolygon': 'MultiPolygon',
-    }
-
     def __init__(self):
         self.field_mapper = FieldMapper()
 
@@ -108,16 +98,11 @@ class ShapefileBuilder:
 
             geom_type = GeometryConverter.get_geometry_type(feature.geometry)
 
-            # Skip GeometryCollection (can't write to single Shapefile)
             if geom_type == 'GeometryCollection':
                 # Expand GeometryCollection into individual geometries
                 self._expand_geometry_collection(feature, grouped)
-                continue
-
-            if geom_type not in grouped:
-                grouped[geom_type] = []
-
-            grouped[geom_type].append(feature)
+            else:
+                grouped.setdefault(geom_type, []).append(feature)
 
         return grouped
 
@@ -138,27 +123,26 @@ class ShapefileBuilder:
         if not isinstance(feature.geometry, GeometryCollection):
             return
 
+        num_geoms = len(feature.geometry.geoms)
         for i, geom in enumerate(feature.geometry.geoms):
             geom_type = GeometryConverter.get_geometry_type(geom)
+            sub_name = f"{feature.name}_{i}" if num_geoms > 1 else feature.name
 
             if geom_type == 'GeometryCollection':
                 # Recursively expand nested collections
                 sub_feature = Feature(
                     geometry=geom,
                     properties=feature.properties.copy(),
-                    name=f"{feature.name}_{i}"
+                    name=sub_name
                 )
                 self._expand_geometry_collection(sub_feature, grouped)
             else:
-                if geom_type not in grouped:
-                    grouped[geom_type] = []
-
                 new_feature = Feature(
                     geometry=geom,
                     properties=feature.properties.copy(),
-                    name=f"{feature.name}_{i}" if len(feature.geometry.geoms) > 1 else feature.name
+                    name=sub_name
                 )
-                grouped[geom_type].append(new_feature)
+                grouped.setdefault(geom_type, []).append(new_feature)
 
     def _get_output_path(self, output_base: Path, geom_type: str) -> Path:
         """
@@ -238,40 +222,15 @@ class ShapefileBuilder:
         Returns:
             Fiona schema dictionary
         """
-        # Determine fiona geometry type (use Multi* for flexibility)
-        fiona_geom_type = self._get_fiona_geometry_type(geom_type)
-
-        # Determine field types from data
-        properties = {}
-        for original_name, short_name in field_mapping.items():
-            field_type = self._infer_field_type(features, original_name)
-            properties[short_name] = field_type
+        properties = {
+            short_name: self._infer_field_type(features, original_name)
+            for original_name, short_name in field_mapping.items()
+        }
 
         return {
-            'geometry': fiona_geom_type,
+            'geometry': geom_type,
             'properties': properties
         }
-
-    def _get_fiona_geometry_type(self, geom_type: str) -> str:
-        """
-        Get fiona geometry type string.
-
-        Shapefiles support both single and multi geometries in same file,
-        so we use the more flexible type where possible.
-
-        Args:
-            geom_type: Base geometry type
-
-        Returns:
-            Fiona geometry type string
-        """
-        # Map to fiona types that support both single and multi
-        type_map = {
-            'Point': 'Point',
-            'LineString': 'LineString',
-            'Polygon': 'Polygon',
-        }
-        return type_map.get(geom_type, geom_type)
 
     def _infer_field_type(
         self,

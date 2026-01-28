@@ -137,21 +137,18 @@ class KMZConverter:
         Returns:
             True if KMZ, False if KML
         """
-        # Check by extension first
-        if path.suffix.lower() == '.kmz':
+        suffix = path.suffix.lower()
+        if suffix == '.kmz':
             return True
-        elif path.suffix.lower() == '.kml':
+        if suffix == '.kml':
             return False
 
-        # Check by file signature (magic bytes)
+        # Check by file signature (magic bytes) - ZIP files start with PK
         try:
             with open(path, 'rb') as f:
-                signature = f.read(4)
-                # ZIP files start with PK\x03\x04 or PK\x05\x06
-                return signature[:2] == b'PK'
+                return f.read(2) == b'PK'
         except Exception:
-            # If we can't read the file, assume based on extension
-            return path.suffix.lower() == '.kmz'
+            return False
 
     def _placemarks_to_features(
         self,

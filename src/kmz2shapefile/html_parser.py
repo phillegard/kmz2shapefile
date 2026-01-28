@@ -5,6 +5,11 @@ from bs4 import BeautifulSoup
 from lxml import etree
 
 
+def _get_local_name(elem: etree._Element) -> Optional[str]:
+    """Get the local name of an XML element without namespace prefix."""
+    return etree.QName(elem.tag).localname if isinstance(elem.tag, str) else None
+
+
 class HTMLTableParser:
     """Extract attributes from HTML tables in KML descriptions."""
 
@@ -83,27 +88,20 @@ class HTMLTableParser:
         Returns:
             Coerced value
         """
-        # Handle null/empty
         if not value or value == '<Null>':
             return None
 
-        # Try int
-        try:
-            # Check if it looks like an int (no decimal point)
-            if '.' not in value and value.lstrip('-').isdigit():
-                return int(value)
-        except ValueError:
-            pass
+        # Check for int (no decimal point, only digits with optional leading minus)
+        if '.' not in value and value.lstrip('-').isdigit():
+            return int(value)
 
-        # Try float
-        try:
-            # Only convert to float if it has a decimal point
-            if '.' in value:
+        # Check for float (has decimal point)
+        if '.' in value:
+            try:
                 return float(value)
-        except ValueError:
-            pass
+            except ValueError:
+                pass
 
-        # Return as string
         return value
 
     def parse_extended_data(self, extended_data: Optional[etree._Element]) -> Dict[str, Any]:
@@ -126,30 +124,24 @@ class HTMLTableParser:
         attributes = {}
 
         try:
-            # Find all SimpleData elements (handles SchemaData nesting)
             for elem in extended_data.iter():
-                local_name = etree.QName(elem.tag).localname if isinstance(elem.tag, str) else None
+                local_name = _get_local_name(elem)
 
                 if local_name == 'SimpleData':
                     name = elem.get('name')
                     if name and elem.text:
                         attributes[name] = self._coerce_type(elem.text.strip())
 
-                # Handle Data elements with <value> children
                 elif local_name == 'Data':
                     name = elem.get('name')
-                    # Find value child element
-                    value_elem = None
-                    for child in elem:
-                        child_name = etree.QName(child.tag).localname if isinstance(child.tag, str) else None
-                        if child_name == 'value':
-                            value_elem = child
-                            break
+                    value_elem = next(
+                        (child for child in elem if _get_local_name(child) == 'value'),
+                        None
+                    )
                     if name and value_elem is not None and value_elem.text:
                         attributes[name] = self._coerce_type(value_elem.text.strip())
 
         except Exception:
-            # Graceful degradation on parse errors
             pass
 
         return attributes

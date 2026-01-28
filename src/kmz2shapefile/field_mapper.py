@@ -1,5 +1,6 @@
 """Map field names to valid Shapefile field names (max 10 characters)."""
 
+import re
 from typing import Dict, List, Set
 
 
@@ -86,16 +87,9 @@ class FieldMapper:
         Returns:
             Cleaned field name
         """
-        result = []
-        for char in name:
-            if char.isalnum() or char == '_':
-                result.append(char)
-            else:
-                # Replace invalid chars with underscore
-                if result and result[-1] != '_':
-                    result.append('_')
-
-        return ''.join(result).strip('_')
+        # Replace invalid characters with underscore, collapse multiple underscores
+        cleaned = re.sub(r'[^a-zA-Z0-9_]+', '_', name)
+        return cleaned.strip('_')
 
     def _resolve_collision(self, base_name: str) -> str:
         """

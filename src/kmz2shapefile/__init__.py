@@ -1,6 +1,10 @@
-"""KMZ to Shapefile converter with automatic attribute parsing."""
+"""KMZ to Shapefile Converter.
+
+Convert KMZ/KML files to Shapefile with automatic attribute parsing.
+"""
+
+__version__ = "0.1.0"
 
 from .converter import KMZConverter
 
-__version__ = "0.1.0"
 __all__ = ["KMZConverter", "__version__"]

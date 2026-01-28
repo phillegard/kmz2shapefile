@@ -25,6 +25,11 @@ class KMLParser:
         'gx': 'http://www.google.com/kml/ext/2.2'
     }
 
+    def _find_element(self, parent: etree._Element, tag: str) -> Optional[etree._Element]:
+        """Find child element by tag, trying namespaced first then unnamespaced."""
+        elem = parent.find(f'kml:{tag}', namespaces=self.NAMESPACES)
+        return elem if elem is not None else parent.find(tag)
+
     def parse(self, kml_content: str) -> List[Placemark]:
         """
         Parse KML and extract all Placemarks.
@@ -69,54 +74,32 @@ class KMLParser:
             Placemark object or None if extraction fails
         """
         try:
-            # Extract name
-            name_elem = element.find('kml:name', namespaces=self.NAMESPACES)
-            if name_elem is None:
-                name_elem = element.find('name')
+            name_elem = self._find_element(element, 'name')
             name = name_elem.text if name_elem is not None and name_elem.text else "Unnamed"
 
-            # Extract description
-            desc_elem = element.find('kml:description', namespaces=self.NAMESPACES)
-            if desc_elem is None:
-                desc_elem = element.find('description')
+            desc_elem = self._find_element(element, 'description')
             description = desc_elem.text if desc_elem is not None else None
 
-            # Extract geometry element
-            geometry_element = self._extract_geometry_element(element)
-
-            # Extract style URL
-            style_elem = element.find('kml:styleUrl', namespaces=self.NAMESPACES)
-            if style_elem is None:
-                style_elem = element.find('styleUrl')
+            style_elem = self._find_element(element, 'styleUrl')
             style_url = style_elem.text if style_elem is not None else None
-
-            # Extract ExtendedData element
-            ext_data_elem = element.find('kml:ExtendedData', namespaces=self.NAMESPACES)
-            if ext_data_elem is None:
-                ext_data_elem = element.find('ExtendedData')
 
             return Placemark(
                 name=name,
                 description=description,
-                geometry_element=geometry_element,
+                geometry_element=self._extract_geometry_element(element),
                 style_url=style_url,
-                extended_data=ext_data_elem
+                extended_data=self._find_element(element, 'ExtendedData')
             )
 
         except Exception:
-            # Log warning but don't fail entire parse
+            # Graceful degradation: skip malformed placemarks
             return None
 
     def _extract_geometry_element(self, placemark: etree._Element) -> Optional[etree._Element]:
         """
         Find geometry element in Placemark.
 
-        Priority order:
-        1. MultiGeometry (contains multiple geometry types)
-        2. LineString
-        3. Polygon
-        4. Point
-        5. LinearRing
+        Priority order: MultiGeometry, LineString, Polygon, Point, LinearRing
 
         Args:
             placemark: Placemark XML element
@@ -124,23 +107,8 @@ class KMLParser:
         Returns:
             Geometry element or None if not found
         """
-        geometry_types = [
-            'MultiGeometry',
-            'LineString',
-            'Polygon',
-            'Point',
-            'LinearRing'
-        ]
-
-        for geom_type in geometry_types:
-            # Try with namespace
-            elem = placemark.find(f'kml:{geom_type}', namespaces=self.NAMESPACES)
+        for geom_type in ('MultiGeometry', 'LineString', 'Polygon', 'Point', 'LinearRing'):
+            elem = self._find_element(placemark, geom_type)
             if elem is not None:
                 return elem
-
-            # Try without namespace
-            elem = placemark.find(geom_type)
-            if elem is not None:
-                return elem
-
         return None
